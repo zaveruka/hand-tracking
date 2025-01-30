@@ -3,7 +3,6 @@ import mediapipe as mp
 import numpy as np
 from collections import deque
 
-
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
 mp_draw = mp.solutions.drawing_utils
@@ -23,11 +22,15 @@ cube_edges = [(0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0
 angle_x, angle_y = 0, 0
 scale_factor = 100  
 
-hand_positions = deque(maxlen=8)  # stores 8 previous hand positions(by frame)
-gesture_threshold = 120  # minimum movement, in pixels, for a gesture
+# **Tracking for swipe gestures**
+hand_positions = deque(maxlen=8)  # stores 8 previous hand positions (by frame)
+gesture_threshold = 120  # minimum movement, in pixels, for a swipe
+
+# **Tracking for pinch detection**
+pinch_distances = deque(maxlen=8)  # store last 8 pinch distances(by frame )
+pinch_threshold = 0.8  # minimum variation in normalized distance to detect pinch
 
 def project_point(point, screen_size):
-    """Projects 3D points onto a 2D screen."""
     fov = 400
     z = point[2] + 5
     z = max(z, 0.1)
@@ -35,7 +38,7 @@ def project_point(point, screen_size):
     y = int((point[1] / z) * fov + screen_size[1] / 2)
     return (x, y)
 
-def detect_gesture(hand_positions, threshold):
+def detect_swipe(hand_positions, threshold):
     if len(hand_positions) > 1:
         start_x, start_y = hand_positions[0]
         end_x, end_y = hand_positions[-1]
@@ -46,6 +49,17 @@ def detect_gesture(hand_positions, threshold):
             return "Swipe Left" if displacement_x < 0 else "Swipe Right"
         elif abs(displacement_y) > threshold:
             return "Swipe Up" if displacement_y < 0 else "Swipe Down"
+    
+    return None  
+
+def detect_pinch(pinch_distances, threshold):
+    if len(pinch_distances) > 1:
+        start_distance = pinch_distances[0]
+        end_distance = pinch_distances[-1]
+        variation = end_distance - start_distance
+
+        if abs(variation) > threshold:
+            return "Pinch Out" if variation > 0 else "Pinch In"
     
     return None  
 
@@ -60,12 +74,13 @@ while True:
 
     normalized_lengths = [0, 0]
     hand_center = None  
+    pinch_distance = None  # current frame pinch distance
 
     if results.multi_hand_landmarks:
         for hand_index, hand_landmarks in enumerate(results.multi_hand_landmarks):
             h, w, _ = frame.shape
             points = []
-            for idx in [4, 8]: 
+            for idx in [4, 8]:  
                 x = int(hand_landmarks.landmark[idx].x * w)
                 y = int(hand_landmarks.landmark[idx].y * h)
                 points.append((x, y))
@@ -76,10 +91,17 @@ while True:
                 normalized_length = max(0, min(1, normalized_length))
                 normalized_lengths[hand_index % 2] = normalized_length
 
+                # Store the normalized pinch distance
+                pinch_distance = normalized_length
+                pinch_distances.append(pinch_distance)
+
+            # Store hand center for swipe detection
             hand_center = (int(hand_landmarks.landmark[9].x * w), int(hand_landmarks.landmark[9].y * h))
             hand_positions.append(hand_center)
 
-    gesture_detected = detect_gesture(hand_positions, gesture_threshold)
+    # **Detect gestures**
+    swipe_detected = detect_swipe(hand_positions, gesture_threshold)
+    pinch_detected = detect_pinch(pinch_distances, pinch_threshold)
 
     visual_frame = np.zeros((400, 400, 3), dtype=np.uint8)
     
@@ -105,9 +127,12 @@ while True:
         pt1, pt2 = projected_vertices[edge[0]], projected_vertices[edge[1]]
         cv2.line(visual_frame, pt1, pt2, (255, 255, 255), 2)
 
-    if gesture_detected:
-        cv2.putText(frame, f"Gesture: {gesture_detected}", (50, 50), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
-    
+    # **display detected gestures**
+    if swipe_detected:
+        cv2.putText(frame, f"Gesture: {swipe_detected}", (50, 50), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
+    if pinch_detected:
+        cv2.putText(frame, f"Gesture: {pinch_detected}", (50, 90), cv2.FONT_HERSHEY_DUPLEX, 1, (255, 0, 0), 2)
+
     cv2.imshow("jarvis, track my fingers", frame)
     cv2.imshow("cube", visual_frame)
 
