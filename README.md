@@ -32,6 +32,10 @@ pip install opencv-python mediapipe numpy
 ```
 
 ## Work In Progress !
-this is a work in progress, and i think the next step will be identifyng gestures
-and that will be opening a lot more possibilities
-also i want to make the cube cooler
+Alright now that added the gestures(which still can improve ofc)
+I would like to keep expanding and testing the interaction with 3d spaces and objects
+
+im gonna probably make a 3d engine to get a better undestanding of the application of matrices in projections
+then ill come back to this
+
+i will also add the missing code explanations to the read me, eventually...

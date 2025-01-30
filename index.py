@@ -12,6 +12,8 @@ cap = cv2.VideoCapture(0)
 cv2.namedWindow("jarvis, track my fingers", cv2.WINDOW_NORMAL)
 cv2.namedWindow("cube", cv2.WINDOW_NORMAL)
 
+visual_frame_size = (800, 800)
+
 cube_vertices = np.array([
     [-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
     [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]
@@ -31,8 +33,8 @@ pinch_distances = deque(maxlen=8)  # store last 8 pinch distances(by frame )
 pinch_threshold = 0.8  # minimum variation in normalized distance to detect pinch
 
 def project_point(point, screen_size):
-    fov = 400
-    z = point[2] + 5
+    fov = 700
+    z = point[2] + 8
     z = max(z, 0.1)
     x = int((point[0] / z) * fov + screen_size[0] / 2)
     y = int((point[1] / z) * fov + screen_size[1] / 2)
@@ -63,6 +65,19 @@ def detect_pinch(pinch_distances, threshold):
     
     return None  
 
+def translate_cube(vertices, translation):
+    """
+    :param vertices: np.array of shape (8, 3), representing the cube's vertices.
+    :param translation: tuple (dx, dy, dz) representing the translation along x, y, and z axes.
+    :return: np.array of translated vertices.
+    """
+    translation_matrix = np.array(translation, dtype=np.float32)
+    translated_vertices = vertices + translation_matrix
+    return translated_vertices
+
+translation_x, translation_y, translation_z = 0, 0, 5
+scaling_factor = 1.0  # scale modifier
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -91,11 +106,11 @@ while True:
                 normalized_length = max(0, min(1, normalized_length))
                 normalized_lengths[hand_index % 2] = normalized_length
 
-                # Store the normalized pinch distance
+                # store the normalized pinch distance
                 pinch_distance = normalized_length
                 pinch_distances.append(pinch_distance)
 
-            # Store hand center for swipe detection
+            # store hand center for swipe detection
             hand_center = (int(hand_landmarks.landmark[9].x * w), int(hand_landmarks.landmark[9].y * h))
             hand_positions.append(hand_center)
 
@@ -103,7 +118,7 @@ while True:
     swipe_detected = detect_swipe(hand_positions, gesture_threshold)
     pinch_detected = detect_pinch(pinch_distances, pinch_threshold)
 
-    visual_frame = np.zeros((400, 400, 3), dtype=np.uint8)
+    visual_frame = np.zeros((visual_frame_size[0], visual_frame_size[1], 3), dtype=np.uint8)
     
     angle_x += 5 * normalized_lengths[0]  
     angle_y += 5 * normalized_lengths[1] 
@@ -120,14 +135,33 @@ while True:
     
     rotation_matrix = rotation_x @ rotation_y
     transformed_vertices = [rotation_matrix @ vertex for vertex in cube_vertices]
-    transformed_vertices = [vertex + [0, 0, 5] for vertex in transformed_vertices]
-    projected_vertices = [project_point(vertex * scale_factor, visual_frame.shape[:2]) for vertex in transformed_vertices]
 
+    if swipe_detected:
+        if swipe_detected == "Swipe Left":
+            translation_x -= 0.3 
+        elif swipe_detected == "Swipe Right":
+            translation_x += 0.3  
+        elif swipe_detected == "Swipe Up":
+            translation_y -= 0.3  
+        elif swipe_detected == "Swipe Down":
+            translation_y += 0.3  
+
+    if pinch_detected:
+        if pinch_detected == "Pinch In":
+            scaling_factor *= 0.95 
+        elif pinch_detected == "Pinch Out":
+            scaling_factor *= 1.05  
+
+    transformed_vertices = [vertex * scaling_factor for vertex in transformed_vertices]
+    transformed_vertices = [vertex + [translation_x, translation_y, translation_z] for vertex in transformed_vertices]
+    
+    projected_vertices = [project_point(vertex * scale_factor, visual_frame_size) for vertex in transformed_vertices]
+
+    # draw cube edges
     for edge in cube_edges:
         pt1, pt2 = projected_vertices[edge[0]], projected_vertices[edge[1]]
         cv2.line(visual_frame, pt1, pt2, (255, 255, 255), 2)
 
-    # **display detected gestures**
     if swipe_detected:
         cv2.putText(frame, f"Gesture: {swipe_detected}", (50, 50), cv2.FONT_HERSHEY_DUPLEX, 1, (0, 255, 0), 2)
     if pinch_detected:
